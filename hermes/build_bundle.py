@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_VERSION = "0.2.0"
+DEFAULT_VERSION = "0.3.0"
 EXCLUDED_PARTS = {
     ".git",
     ".pytest_cache",
@@ -21,6 +21,7 @@ EXCLUDED_PARTS = {
     "logs",
     "raw",
     "reports",
+    "payload",
     "venv",
     ".venv",
 }

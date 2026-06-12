@@ -27,14 +27,25 @@ ALLOWED_TOOLSETS = ["terminal", "file"]
 
 def hermes_home() -> Path:
     configured = os.getenv("HERMES_HOME")
-    return Path(configured).expanduser().resolve() if configured else (Path.home() / ".hermes")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    if os.name == "nt" and os.getenv("LOCALAPPDATA"):
+        return (Path(os.environ["LOCALAPPDATA"]) / "hermes").resolve()
+    return Path.home() / ".hermes"
 
 
 def hermes_command() -> str:
+    candidates = [
+        hermes_home() / "hermes-agent" / "venv" / "Scripts" / "hermes.exe",
+        hermes_home() / "hermes-agent" / "venv" / "bin" / "hermes",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
     executable = shutil.which("hermes")
-    if not executable:
-        raise RuntimeError("Hermes CLI was not found on PATH")
-    return executable
+    if executable:
+        return executable
+    raise RuntimeError("Hermes CLI was not found on PATH or in HERMES_HOME")
 
 
 def jobs_path() -> Path:
@@ -68,13 +79,23 @@ def find_job(payload: dict[str, Any], job_id: str | None = None) -> dict[str, An
     return None
 
 
-def discover_feishu_target() -> str | None:
+def discover_feishu_targets() -> list[str]:
     path = hermes_home() / "channel_directory.json"
     if not path.exists():
-        return None
+        return []
     payload = json.loads(path.read_text(encoding="utf-8"))
     targets = payload.get("platforms", {}).get("feishu", [])
-    return f"feishu:{targets[0]['id']}" if targets else None
+    values = []
+    for target in targets:
+        target_id = target.get("id") if isinstance(target, dict) else None
+        if target_id:
+            values.append(f"feishu:{target_id}")
+    return values
+
+
+def discover_feishu_target() -> str | None:
+    targets = discover_feishu_targets()
+    return targets[0] if targets else None
 
 
 def install_skill() -> Path:
@@ -167,8 +188,13 @@ def doctor(args: argparse.Namespace) -> int:
         checks.append({"name": name, "ok": ok, "detail": detail})
 
     add("python", sys.version_info >= (3, 10), platform.python_version())
-    executable = shutil.which("hermes")
-    add("hermes_cli", bool(executable), executable or "not found")
+    try:
+        executable = hermes_command()
+    except RuntimeError as exc:
+        executable = None
+        add("hermes_cli", False, str(exc))
+    else:
+        add("hermes_cli", True, executable)
     home = hermes_home()
     add("hermes_home", home.is_dir(), str(home))
     add("project_writable", os.access(ROOT, os.W_OK), str(ROOT))
@@ -251,6 +277,13 @@ def uninstall(_: argparse.Namespace) -> int:
     return 0
 
 
+def target(args: argparse.Namespace) -> int:
+    targets = discover_feishu_targets()
+    payload = {"status": "ok" if targets else "waiting", "targets": targets}
+    print(json.dumps(payload, ensure_ascii=False, indent=2 if args.json else None))
+    return 0 if targets else 2
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Hermes-only portable installer")
     sub = root.add_subparsers(dest="command", required=True)
@@ -261,6 +294,8 @@ def parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--json", action="store_true")
     test_parser = sub.add_parser("test")
     test_parser.add_argument("--timeout", type=int, default=600)
+    target_parser = sub.add_parser("target")
+    target_parser.add_argument("--json", action="store_true")
     sub.add_parser("uninstall")
     return root
 
@@ -272,6 +307,7 @@ def main() -> int:
             "install": install,
             "doctor": doctor,
             "test": test_runtime,
+            "target": target,
             "uninstall": uninstall,
         }[args.command](args)
     except Exception as exc:
