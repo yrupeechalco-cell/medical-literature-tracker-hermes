@@ -39,6 +39,19 @@ python -m medlit_tracker mark-delivered --batch-id <batch-id>
 其他 agent、subagent 或 delegate。安装器会把定时任务固定为 `deepseek` /
 `deepseek-v4-pro`，并仅开放 Hermes 的 `terminal` 与 `file` 工具集。
 
+### 全新 Windows 电脑
+
+电脑无需预装 Python、Git、Node.js、Hermes 或 WSL2。完整包内置文献任务所需的
+Hermes core、cron、飞书组件和 CC Switch 便携版；飞书与 Obsidian 仍由用户从
+官方渠道独立安装。解压发布包后双击：
+
+```text
+INSTALL_WINDOWS.cmd
+```
+
+安装过程中只需要本人填写 DeepSeek API Key、完成飞书扫码授权，并向机器人发送
+第一条私聊消息。详细流程见 [`docs/全新电脑一键部署.md`](docs/全新电脑一键部署.md)。
+
 将整个项目目录复制到目标机器后执行：
 
 ```powershell
@@ -54,9 +67,11 @@ SQLite 数据库或原始响应到系统盘；Hermes 主目录只保存调度配
 
 ```powershell
 python hermes/build_bundle.py
+python hermes/build_full_windows_bundle.py
 ```
 
-ZIP 默认写入 `dist/`，不包含数据库、原始响应、报告、日志、缓存或密钥。
+第一个命令生成轻量源码包；第二个命令下载固定第三方发行物并生成完整 Windows 包。
+两种 ZIP 都不包含数据库、原始响应、报告、日志、缓存或密钥。
 
 ## 目录标注
 

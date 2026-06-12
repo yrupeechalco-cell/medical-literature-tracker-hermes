@@ -5,8 +5,11 @@ data/*.sqlite3*
 raw/**
 reports/**
 logs/**
+.install-state.json
+payload/**
+dist/*.zip
+dist/.bundle-cache/
 !data/.gitkeep
 !raw/.gitkeep
 !reports/.gitkeep
 !logs/.gitkeep
-

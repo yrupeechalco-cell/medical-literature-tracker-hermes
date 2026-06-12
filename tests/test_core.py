@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import os
+import subprocess
 import tempfile
 import unittest
 import sqlite3
+import zipfile
 from datetime import date, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from medlit_tracker.db import Database
 from medlit_tracker.scoring import matches_topic, score_record
@@ -16,6 +20,15 @@ from medlit_tracker.maintenance import prune_dated_directories
 def load_portable_module():
     path = Path(__file__).resolve().parents[1] / "hermes" / "portable.py"
     spec = importlib.util.spec_from_file_location("hermes_portable", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_bundle_module():
+    path = Path(__file__).resolve().parents[1] / "hermes" / "build_bundle.py"
+    spec = importlib.util.spec_from_file_location("hermes_bundle", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -205,6 +218,90 @@ class HermesPortableTests(unittest.TestCase):
         self.assertEqual(job["skills"], [])
         self.assertIsNone(job["skill"])
         self.assertEqual(job["medical_literature_tracker"]["runtime"], "hermes-only")
+
+    def test_windows_default_hermes_home_uses_local_app_data(self):
+        portable = load_portable_module()
+        with patch.dict(
+            portable.os.environ,
+            {"LOCALAPPDATA": r"C:\Users\Test\AppData\Local"},
+            clear=True,
+        ), patch.object(portable.os, "name", "nt"):
+            self.assertEqual(
+                portable.hermes_home(),
+                Path(r"C:\Users\Test\AppData\Local\hermes").resolve(),
+            )
+
+    def test_hermes_home_executable_wins_over_path(self):
+        portable = load_portable_module()
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            executable = home / "hermes-agent" / "venv" / "Scripts" / "hermes.exe"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"")
+            with patch.dict(portable.os.environ, {"HERMES_HOME": str(home)}, clear=False), patch.object(
+                portable.shutil, "which", return_value=r"C:\Other\hermes.exe"
+            ):
+                self.assertEqual(portable.hermes_command(), str(executable))
+
+
+class DeploymentBundleTests(unittest.TestCase):
+    def test_bundle_contains_one_click_installer_without_runtime_data(self):
+        bundle = load_bundle_module()
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "bundle.zip"
+            bundle.build("test", output)
+            with zipfile.ZipFile(output) as archive:
+                names = archive.namelist()
+            self.assertTrue(any(name.endswith("/INSTALL_WINDOWS.cmd") for name in names))
+            self.assertTrue(any(name.endswith("/deploy/windows/install.ps1") for name in names))
+            forbidden = [
+                name
+                for name in names
+                if any(part in name.lower() for part in ("/.env", "/data/", "/raw/", "/logs/", "/reports/"))
+            ]
+            self.assertEqual(forbidden, [])
+
+    def test_full_bundle_pins_open_source_components(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "hermes" / "build_full_windows_bundle.py").read_text(encoding="utf-8")
+        self.assertIn('HERMES_TAG = "v2026.6.5"', source)
+        self.assertIn('CC_SWITCH_TAG = "v3.16.2"', source)
+        self.assertIn('UV_VERSION = "0.11.21"', source)
+        self.assertNotIn("feishu.cn/download", source)
+        self.assertNotIn("obsidian.md/download", source)
+
+    def test_windows_launchers_can_find_the_installed_state(self):
+        root = Path(__file__).resolve().parents[1]
+        install = (root / "deploy" / "windows" / "install.ps1").read_text(encoding="utf-8")
+        check = (root / "deploy" / "windows" / "check.ps1").read_text(encoding="utf-8")
+        uninstall = (root / "deploy" / "windows" / "uninstall.ps1").read_text(encoding="utf-8")
+        self.assertIn('(Join-Path $sourceRoot ".install-state.json")', install)
+        self.assertIn('MedicalLiteratureTracker\\.install-state.json', check)
+        self.assertIn('MedicalLiteratureTracker\\.install-state.json', uninstall)
+
+    @unittest.skipUnless(os.name == "nt", "PowerShell parser test is Windows-only")
+    def test_windows_scripts_parse_in_powershell(self):
+        root = Path(__file__).resolve().parents[1]
+        scripts = [
+            root / "deploy" / "windows" / "install.ps1",
+            root / "deploy" / "windows" / "check.ps1",
+            root / "deploy" / "windows" / "gateway_watchdog.ps1",
+            root / "deploy" / "windows" / "uninstall.ps1",
+        ]
+        for script in scripts:
+            command = (
+                "$tokens=$null;$errors=$null;"
+                f"[Management.Automation.Language.Parser]::ParseFile('{script}',"
+                "[ref]$tokens,[ref]$errors)|Out-Null;"
+                "if($errors.Count){$errors|ForEach-Object Message;exit 1}"
+            )
+            completed = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", command],
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
 
 
 if __name__ == "__main__":
