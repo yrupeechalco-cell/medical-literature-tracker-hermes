@@ -1,0 +1,9 @@
+[project]
+name = "medlit-tracker"
+version = "0.1.0"
+description = "Durable medical literature surveillance using official APIs"
+requires-python = ">=3.11"
+
+[tool.unittest]
+start-directory = "tests"
+

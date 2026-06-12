@@ -1,0 +1,58 @@
+{
+  "topic_id": "glp1_obesity_cardiorenal_safety",
+  "name_zh": "GLP-1受体激动剂在肥胖人群中的心血管、肾脏和安全性结局",
+  "name_en": "GLP-1 receptor agonists in obesity: cardiovascular, renal, and safety outcomes",
+  "description_zh": "追踪司美格鲁肽、替尔泊肽、利拉鲁肽、度拉糖肽等药物在肥胖或超重人群中的心血管、肾脏、死亡和安全性证据。",
+  "lookback_days": 14,
+  "poll_overlap_days": 1,
+  "max_results_per_source": 100,
+  "source_limits": {
+    "pubmed": 250,
+    "europe_pmc": 100,
+    "medrxiv": 200,
+    "clinical_trials": 100
+  },
+  "pubmed_query": "((\"Glucagon-Like Peptide-1 Receptor Agonists\"[Mesh] OR semaglutide[Title/Abstract] OR tirzepatide[Title/Abstract] OR liraglutide[Title/Abstract] OR dulaglutide[Title/Abstract] OR retatrutide[Title/Abstract]) AND (\"Obesity\"[Mesh] OR obes*[Title/Abstract] OR overweight[Title/Abstract]) AND (cardiovascular[Title/Abstract] OR renal[Title/Abstract] OR kidney[Title/Abstract] OR mortality[Title/Abstract] OR safety[Title/Abstract] OR adverse[Title/Abstract] OR guideline[Publication Type] OR randomized controlled trial[Publication Type] OR meta-analysis[Publication Type] OR systematic review[Publication Type]))",
+  "europe_pmc_query": "(semaglutide OR tirzepatide OR liraglutide OR dulaglutide OR retatrutide) AND (obesity OR overweight) AND (cardiovascular OR renal OR kidney OR mortality OR safety OR adverse)",
+  "clinical_trials_query": "(AREA[ConditionSearch](Obesity) OR AREA[ConditionSearch](Overweight)) AND (AREA[InterventionSearch](Semaglutide) OR AREA[InterventionSearch](Tirzepatide) OR AREA[InterventionSearch](Liraglutide) OR AREA[InterventionSearch](Dulaglutide) OR AREA[InterventionSearch](Retatrutide))",
+  "required_term_groups": [
+    ["semaglutide", "tirzepatide", "liraglutide", "dulaglutide", "retatrutide", "glp-1", "glucagon-like peptide-1"],
+    ["obesity", "obese", "overweight"]
+  ],
+  "outcome_terms": [
+    "cardiovascular", "heart failure", "major adverse cardiovascular", "mace",
+    "renal", "kidney", "nephropathy", "mortality", "death", "safety",
+    "adverse event", "pancreatitis", "gallbladder", "suicidal", "guideline"
+  ],
+  "priority_terms": {
+    "guideline": 6,
+    "randomized controlled trial": 5,
+    "randomised controlled trial": 5,
+    "meta-analysis": 5,
+    "systematic review": 4,
+    "phase 3": 4,
+    "cardiovascular outcomes": 4,
+    "major adverse cardiovascular": 4,
+    "kidney outcomes": 4,
+    "renal outcomes": 4,
+    "mortality": 3,
+    "safety": 2,
+    "adverse event": 2,
+    "retraction": 10,
+    "expression of concern": 10,
+    "correction": 7
+  },
+  "sources": {
+    "pubmed": true,
+    "europe_pmc": true,
+    "medrxiv": true,
+    "clinical_trials": true
+  },
+  "storage": {
+    "sqlite_cache_kib": 2048,
+    "raw_retention_days": 7,
+    "report_retention_days": 90,
+    "run_history_days": 90,
+    "delivery_detail_days": 30
+  }
+}
