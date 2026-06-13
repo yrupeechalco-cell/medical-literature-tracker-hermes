@@ -1,5 +1,11 @@
 # 医学文献实时追踪系统 / Medical Literature Tracker
 
+## 新电脑直接下载
+
+Windows 10/11 用户请打开 [最新 Release](https://github.com/yrupeechalco-cell/medical-literature-tracker-hermes/releases/latest)，
+在 **Assets** 中下载文件名包含 `full-windows` 的 ZIP。不要下载 GitHub 自动生成的
+`Source code` 压缩包。完整步骤见 [`新电脑下载与安装.md`](新电脑下载与安装.md)。
+
 这是一个面向医学老师和研究人员的增量文献追踪实验。首个试验主题为：
 
 > **GLP-1 受体激动剂用于肥胖人群的心血管、肾脏和安全性结局**
