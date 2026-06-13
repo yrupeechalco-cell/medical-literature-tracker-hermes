@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS delivery_items (
     batch_id TEXT NOT NULL REFERENCES delivery_batches(batch_id) ON DELETE CASCADE,
     canonical_id TEXT NOT NULL REFERENCES records(canonical_id) ON DELETE CASCADE,
     record_version INTEGER NOT NULL,
+    event_key TEXT NOT NULL DEFAULT 'initial',
     PRIMARY KEY (batch_id, canonical_id, record_version)
 );
 
@@ -86,6 +87,13 @@ CREATE TABLE IF NOT EXISTS delivered_versions (
     record_version INTEGER NOT NULL,
     delivered_at TEXT NOT NULL,
     PRIMARY KEY (canonical_id, record_version)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS delivered_events (
+    canonical_id TEXT NOT NULL,
+    event_key TEXT NOT NULL,
+    delivered_at TEXT NOT NULL,
+    PRIMARY KEY (canonical_id, event_key)
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS source_cursors (
@@ -128,6 +136,13 @@ class Database:
             }
             if "run_id" not in batch_columns:
                 connection.execute("ALTER TABLE delivery_batches ADD COLUMN run_id TEXT")
+            item_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(delivery_items)")
+            }
+            if "event_key" not in item_columns:
+                connection.execute(
+                    "ALTER TABLE delivery_items ADD COLUMN event_key TEXT NOT NULL DEFAULT 'initial'"
+                )
             connection.execute(
                 """
                 INSERT OR IGNORE INTO delivered_versions(canonical_id,record_version,delivered_at)
@@ -135,6 +150,14 @@ class Database:
                 FROM delivery_items di
                 JOIN delivery_batches db ON db.batch_id=di.batch_id
                 WHERE db.status='delivered'
+                """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO delivered_events(canonical_id,event_key,delivered_at)
+                SELECT canonical_id,'initial',MIN(delivered_at)
+                FROM delivered_versions
+                GROUP BY canonical_id
                 """
             )
 
@@ -310,19 +333,33 @@ class Database:
                     return None
 
             query = """
-                SELECT r.* FROM records r
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM delivered_versions dv
-                    WHERE dv.canonical_id=r.canonical_id
-                      AND dv.record_version=r.version
+                WITH candidate_events AS (
+                    SELECT r.*,
+                        CASE
+                            WHEN NOT EXISTS (
+                                SELECT 1 FROM delivered_events de
+                                WHERE de.canonical_id=r.canonical_id
+                                  AND de.event_key='initial'
+                            ) THEN 'initial'
+                            WHEN r.status IN ('corrected','expression_of_concern','retracted')
+                              AND NOT EXISTS (
+                                SELECT 1 FROM delivered_events de
+                                WHERE de.canonical_id=r.canonical_id
+                                  AND de.event_key='status:' || r.status
+                            ) THEN 'status:' || r.status
+                            ELSE NULL
+                        END AS delivery_event
+                    FROM records r
                 )
+                SELECT * FROM candidate_events
+                WHERE delivery_event IS NOT NULL
                 """
             parameters: list[Any] = []
             if latest_run:
-                query += " AND r.last_changed_at >= ?"
+                query += " AND last_changed_at >= ?"
                 parameters.append(latest_run["started_at"])
             query += """
-                ORDER BY r.score DESC, r.last_changed_at DESC
+                ORDER BY score DESC, last_changed_at DESC
                 LIMIT ?
                 """
             parameters.append(limit)
@@ -338,8 +375,14 @@ class Database:
                 (batch_id, utc_now(), latest_run["run_id"] if latest_run else None),
             )
             connection.executemany(
-                "INSERT INTO delivery_items(batch_id,canonical_id,record_version) VALUES (?,?,?)",
-                [(batch_id, row["canonical_id"], row["version"]) for row in rows],
+                """
+                INSERT INTO delivery_items(batch_id,canonical_id,record_version,event_key)
+                VALUES (?,?,?,?)
+                """,
+                [
+                    (batch_id, row["canonical_id"], row["version"], row["delivery_event"])
+                    for row in rows
+                ],
             )
             return self.get_batch(batch_id, connection=connection)
 
@@ -357,7 +400,7 @@ class Database:
             ).fetchone()
             rows = connection.execute(
                 """
-                SELECT r.* FROM records r
+                SELECT r.*,di.event_key AS delivery_event FROM records r
                 JOIN delivery_items di ON di.canonical_id=r.canonical_id
                 WHERE di.batch_id=? AND di.record_version=r.version
                 ORDER BY r.score DESC, r.first_seen_at DESC
@@ -384,6 +427,25 @@ class Database:
                 (now, batch_id),
             )
             connection.execute(
+                """
+                INSERT OR IGNORE INTO delivered_events(canonical_id,event_key,delivered_at)
+                SELECT canonical_id,event_key,? FROM delivery_items WHERE batch_id=?
+                """,
+                (now, batch_id),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO delivered_events(canonical_id,event_key,delivered_at)
+                SELECT di.canonical_id,'status:' || r.status,?
+                FROM delivery_items di
+                JOIN records r ON r.canonical_id=di.canonical_id
+                WHERE di.batch_id=?
+                  AND di.event_key='initial'
+                  AND r.status IN ('corrected','expression_of_concern','retracted')
+                """,
+                (now, batch_id),
+            )
+            connection.execute(
                 "UPDATE delivery_batches SET status='delivered', delivered_at=? WHERE batch_id=?",
                 (now, batch_id),
             )
@@ -395,6 +457,15 @@ class Database:
                 DELETE FROM delivered_versions
                 WHERE (canonical_id,record_version) IN (
                     SELECT canonical_id,record_version FROM delivery_items WHERE batch_id=?
+                )
+                """,
+                (batch_id,),
+            )
+            connection.execute(
+                """
+                DELETE FROM delivered_events
+                WHERE (canonical_id,event_key) IN (
+                    SELECT canonical_id,event_key FROM delivery_items WHERE batch_id=?
                 )
                 """,
                 (batch_id,),
@@ -471,6 +542,9 @@ class Database:
             compact_history = connection.execute(
                 "SELECT COUNT(*) FROM delivered_versions"
             ).fetchone()[0]
+            delivered_events = connection.execute(
+                "SELECT COUNT(*) FROM delivered_events"
+            ).fetchone()[0]
             cursors = {
                 row["source"]: row["last_success_at"]
                 for row in connection.execute(
@@ -481,6 +555,7 @@ class Database:
                 "records": totals,
                 "pending_batches": pending,
                 "delivered_versions": compact_history,
+                "delivered_events": delivered_events,
                 "source_cursors": cursors,
                 "last_run": dict(last_run) if last_run else None,
             }

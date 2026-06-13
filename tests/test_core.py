@@ -124,14 +124,64 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(batch["records"][0]["title"], record()["title"])
         self.assertEqual(batch["records"][0]["version"], 1)
 
-    def test_record_update_increments_version_and_becomes_pending(self):
+    def test_ordinary_record_update_increments_version_without_redelivery(self):
         self.db.upsert_record(record())
         first = self.db.create_pending_batch()
         self.db.mark_delivered(first["batch_id"])
         self.assertEqual(self.db.upsert_record(record(abstract="Changed abstract")), "updated")
-        second = self.db.create_pending_batch()
-        self.assertIsNotNone(second)
-        self.assertEqual(second["records"][0]["version"], 2)
+        self.assertIsNone(self.db.create_pending_batch())
+        with self.db.connect() as connection:
+            version = connection.execute("SELECT version FROM records").fetchone()[0]
+        self.assertEqual(version, 2)
+
+    def test_major_publication_status_change_is_delivered_once(self):
+        self.db.upsert_record(record())
+        first = self.db.create_pending_batch()
+        self.assertEqual(first["records"][0]["delivery_event"], "initial")
+        self.db.mark_delivered(first["batch_id"])
+
+        self.assertEqual(
+            self.db.upsert_record(record(status="expression_of_concern")), "updated"
+        )
+        warning = self.db.create_pending_batch()
+        self.assertEqual(
+            warning["records"][0]["delivery_event"],
+            "status:expression_of_concern",
+        )
+        self.db.mark_delivered(warning["batch_id"])
+        self.assertIsNone(self.db.create_pending_batch())
+
+        self.assertEqual(self.db.upsert_record(record(status="retracted")), "updated")
+        retraction = self.db.create_pending_batch()
+        self.assertEqual(retraction["records"][0]["delivery_event"], "status:retracted")
+
+    def test_first_delivery_of_already_retracted_record_does_not_repeat(self):
+        self.db.upsert_record(record(status="retracted"))
+        first = self.db.create_pending_batch()
+        self.assertEqual(first["records"][0]["delivery_event"], "initial")
+        self.db.mark_delivered(first["batch_id"])
+        self.db.upsert_record(record(status="retracted", abstract="Metadata refresh"))
+        self.assertIsNone(self.db.create_pending_batch())
+
+    def test_delivery_event_migration_collapses_old_version_duplicates(self):
+        self.db.upsert_record(record())
+        first = self.db.create_pending_batch()
+        self.db.mark_delivered(first["batch_id"])
+        with self.db.connect() as connection:
+            connection.execute("DELETE FROM delivered_events")
+            connection.execute(
+                "INSERT INTO delivered_versions(canonical_id,record_version,delivered_at) "
+                "SELECT canonical_id,99,'2026-01-03' FROM records"
+            )
+
+        reopened = Database(Path(self.temp.name) / "tracker.sqlite3")
+        self.assertIsNone(reopened.create_pending_batch())
+        with reopened.connect() as connection:
+            events = connection.execute(
+                "SELECT canonical_id,event_key FROM delivered_events"
+            ).fetchall()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event_key"], "initial")
 
     def test_delivery_history_survives_detail_pruning(self):
         self.db.upsert_record(record())
@@ -254,6 +304,9 @@ class DeploymentBundleTests(unittest.TestCase):
                 names = archive.namelist()
             self.assertTrue(any(name.endswith("/INSTALL_WINDOWS.cmd") for name in names))
             self.assertTrue(any(name.endswith("/deploy/windows/install.ps1") for name in names))
+            self.assertEqual(
+                sum(name.endswith("/BUNDLE_MANIFEST.json") for name in names), 1
+            )
             forbidden = [
                 name
                 for name in names
