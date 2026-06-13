@@ -19,7 +19,7 @@ import build_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "dist" / ".bundle-cache"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 HERMES_TAG = "v2026.6.5"
 CC_SWITCH_TAG = "v3.16.2"
 UV_VERSION = "0.11.21"

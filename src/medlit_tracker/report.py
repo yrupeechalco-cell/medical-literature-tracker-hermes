@@ -29,6 +29,7 @@ def compact_record(record: dict[str, Any], abstract_limit: int = 1600) -> dict[s
     return {
         "canonical_id": record["canonical_id"],
         "version": record["version"],
+        "delivery_event": record.get("delivery_event", "initial"),
         "record_type": record["record_type"],
         "evidence_label": _label(record),
         "title": record["title"],
@@ -76,6 +77,7 @@ def render_batch(batch: dict[str, Any], topic: dict[str, Any], reports_root: Pat
                 f"## {index}. {record['title']}",
                 "",
                 f"- 类型：{record['evidence_label']}{_warning(record)}",
+                f"- 投递事件：{record['delivery_event']}",
                 f"- 来源：{record['journal'] or '未标注'}",
                 f"- 日期：{record['publication_date'] or record['updated_date'] or '未标注'}",
                 f"- 优先级分数：{record['score']}",
@@ -89,4 +91,3 @@ def render_batch(batch: dict[str, Any], topic: dict[str, Any], reports_root: Pat
     md_path = day_dir / f"{batch['batch_id']}.md"
     md_path.write_text("\n".join(lines), encoding="utf-8")
     return {"json": str(json_path), "markdown": str(md_path)}
-

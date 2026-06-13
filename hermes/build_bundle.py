@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_VERSION = "0.3.0"
+DEFAULT_VERSION = "0.3.1"
 EXCLUDED_PARTS = {
     ".git",
     ".pytest_cache",
@@ -26,7 +26,7 @@ EXCLUDED_PARTS = {
     ".venv",
 }
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".sqlite", ".sqlite3", ".db"}
-EXCLUDED_NAMES = {".env", ".env.local"}
+EXCLUDED_NAMES = {".env", ".env.local", "BUNDLE_MANIFEST.json"}
 
 
 def included_files() -> list[Path]:

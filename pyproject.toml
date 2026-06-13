@@ -1,6 +1,6 @@
 [project]
 name = "medlit-tracker"
-version = "0.3.0"
+version = "0.3.1"
 description = "Durable medical literature surveillance using official APIs"
 requires-python = ">=3.11"
 
